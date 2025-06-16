@@ -3,13 +3,11 @@ import { Search, User, UserCheck, Calendar, BookOpen, Users, Briefcase, ChevronL
 
 // --- Firebase Imports ---
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setLogLevel } from 'firebase/firestore';
 
-
 // --- Firebase Configuration ---
-// In a real deployment, these values would come from environment variables.
-// For local development, you can replace the placeholder with your actual config.
+// This configuration will be provided by Vercel environment variables
 const firebaseConfig = process.env.REACT_APP_FIREBASE_CONFIG ? JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG) : {};
 const appId = process.env.REACT_APP_APP_ID || 'default-app-id';
 
@@ -43,10 +41,10 @@ const Button = ({ children, onClick, variant = 'primary', className = '', disabl
     };
     return <button onClick={onClick} disabled={disabled} className={`${baseClasses} ${variants[variant]} ${className}`}>{children}</button>;
 };
-const LoadingSpinner = () => (
+const LoadingSpinner = ({ text = "جاري تحميل البيانات..." }) => (
     <div className="flex justify-center items-center p-10">
         <Loader className="w-8 h-8 text-blue-500 animate-spin" />
-        <p className="mr-4 text-gray-600">جاري تحميل البيانات...</p>
+        <p className="mr-4 text-gray-600">{text}</p>
     </div>
 );
 const InfoSection = ({ title, icon, children }) => (
@@ -315,8 +313,8 @@ const ScheduleView = ({ db }) => {
         </div>
     );
 };
-const ScheduleForm = ({ onSave, onCancel, eventDate }) => {
-    const [formData, setFormData] = useState({ date: eventDate, courseName: '', hall: '', time: '' });
+const ScheduleForm = ({ item, onSave, onCancel, eventDate }) => {
+    const [formData, setFormData] = useState(item || { date: eventDate, courseName: '', hall: '', time: '' });
     const handleChange = e => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     const handleSubmit = e => { e.preventDefault(); onSave(formData); };
     return (
@@ -334,12 +332,11 @@ const ScheduleForm = ({ onSave, onCancel, eventDate }) => {
 function App() {
   const [activeView, setActiveView] = useState('trainees');
   const [db, setDb] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
+  const [authReady, setAuthReady] = useState(false); // New state to track auth readiness
 
   useEffect(() => {
     if (Object.keys(firebaseConfig).length === 0) {
-        console.error("Firebase config is missing. Please set REACT_APP_FIREBASE_CONFIG environment variable.");
-        setAuthReady(true); // Allow UI to render with a warning
+        console.error("Firebase config is missing.");
         return;
     };
     try {
@@ -349,27 +346,27 @@ function App() {
         const dbInstance = getFirestore(app);
         setDb(dbInstance);
 
-        onAuthStateChanged(authInstance, async (user) => {
-            if (!user) {
-                try {
-                    // In a real app, you wouldn't expose a generic token like this.
-                    // This is a placeholder for the platform's auth mechanism.
-                    const token = process.env.REACT_APP_FIREBASE_TOKEN || null;
-                    if (token) {
-                         await signInWithCustomToken(authInstance, token);
-                    } else {
-                         await signInAnonymously(authInstance);
-                    }
-                } catch (error) { console.error("Auth failed:", error); }
+        // Listen for auth state changes
+        onAuthStateChanged(authInstance, (user) => {
+            if (user) {
+                // User is signed in.
+                console.log("Authentication successful, user UID:", user.uid);
+                setAuthReady(true); // Now the app is ready to interact with Firestore
+            } else {
+                // User is signed out. Try to sign in anonymously.
+                signInAnonymously(authInstance).catch((error) => {
+                    console.error("Anonymous sign-in failed:", error);
+                });
             }
-            setAuthReady(true);
         });
     } catch (error) { console.error("Firebase init error:", error); }
   }, []);
 
   const renderView = () => {
-    if (!authReady) return <LoadingSpinner />;
-    if (!db) return <div className="text-center p-8 bg-white rounded-lg shadow-md"><p className="text-red-600 font-bold">فشل الاتصال بقاعدة البيانات. يرجى التحقق من إعدادات Firebase.</p></div>;
+    // Don't render the main views until auth is ready
+    if (!authReady) {
+        return <LoadingSpinner text="جاري المصادقة..." />;
+    }
     
     switch (activeView) {
       case 'trainees': return <CrudView db={db} collectionName="trainees" singularName="متدرب" pluralName="تفاصيل المتدربين" searchField="name" DetailsComponent={TraineeDetails} FormComponent={TraineeForm} Icon={Users} />;
@@ -398,7 +395,7 @@ function App() {
   );
 }
 
-// --- CSS for animations (Can be moved to a CSS file) ---
+// --- CSS for animations ---
 const style = document.createElement('style');
 style.textContent = `@keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }`;
 document.head.append(style);
